@@ -18,6 +18,8 @@ public abstract class Loader {
     protected bool SaveAssets = false;
     protected string SaveDirectory = null;
 
+
+
     public bool SetSave(string prefix, string folderName)
     {
         if (folderName == null || folderName == "" || prefix == null || !prefix.StartsWith("Assets/"))
@@ -71,6 +73,23 @@ public abstract class Loader {
         ClassLoader.Instance.ResetDB();
 
         WorldLoader.Instance.SaveAssets = false;
+    }
+
+
+    public virtual float GetProgress(out string desc)
+    {
+        desc = "";
+        return 1.0f;
+    }
+
+    public virtual bool IterateBatch()
+    {
+        return true;
+    }
+
+    public virtual void SetBatch(Level[] levels)
+    {
+        return;
     }
 
 

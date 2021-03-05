@@ -22,6 +22,7 @@ public class MaterialLoader : Loader {
     public static UMaterial defaultMaterial = new UMaterial(Shader.Find("ConversionAssets/SWBFStandard"));
 
     public static MaterialLoader Instance { get; private set; } = null;
+
     static MaterialLoader()
     {
         Instance = new MaterialLoader();

@@ -14,6 +14,7 @@ public class TextureLoader : Loader {
 
     public static TextureLoader Instance { get; private set; } = null;
 
+
     private Dictionary<string, Texture2D> texDataBase = new Dictionary<string, Texture2D>();
 
 

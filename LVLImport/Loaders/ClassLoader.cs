@@ -10,10 +10,12 @@ using LibSWBF2.Logging;
 using LibSWBF2.Wrappers;
 using LibSWBF2.Utils;
 
+using UVector3 = UnityEngine.Vector3;
 
 public class ClassLoader : Loader {
 
     public static ClassLoader Instance { get; private set; } = null;
+
 
     static ClassLoader()
     {
@@ -37,6 +39,102 @@ public class ClassLoader : Loader {
     {
         classObjectDatabase.Clear();
     }
+
+
+    private BatchLoadState batch = null;
+
+    class LevelLoadState
+    {
+        public Transform LevelRoot;
+        public EntityClass[] Classes;
+        public int EntityClassIndex;
+
+        public UVector3 SpawnOffset;
+        public float RootZOffset;
+
+        public LevelLoadState(Level lvl)
+        {
+            LevelRoot = new GameObject(lvl.Name).transform;
+            Classes = lvl.GetWrappers<EntityClass>();
+            EntityClassIndex = 0;
+            SpawnOffset = Vector3.zero;
+            RootZOffset = 0.0f;
+        }
+    }
+
+    class BatchLoadState
+    {
+        public List<LevelLoadState> LevelImports;
+        public int LevelImportIndex;
+        public float ZOffset;
+
+        public BatchLoadState(Level[] lvls)
+        {
+            LevelImports = new List<LevelLoadState>();
+            LevelImportIndex = 0;
+            foreach (Level l in lvls)
+            {
+                LevelImports.Add(new LevelLoadState(l));
+            }
+            ZOffset = 0.0f;
+        }
+    }
+
+    public override void SetBatch(Level[] levels)
+    {
+        batch = new BatchLoadState(levels);
+    }
+
+
+    public override float GetProgress(out string desc)
+    {
+        if (batch == null || batch.LevelImportIndex >= batch.LevelImports.Count)
+        {
+            desc = "";
+            return 0.0f;
+        }
+
+        var lvlImp = batch.LevelImports[batch.LevelImportIndex];
+
+        desc = lvlImp.LevelRoot.gameObject.name + ": " + lvlImp.Classes[lvlImp.EntityClassIndex].name;
+        return (float) lvlImp.EntityClassIndex / (float) lvlImp.Classes.Length;   
+    }
+
+
+    public override bool IterateBatch()
+    {
+        if (batch.LevelImportIndex >= batch.LevelImports.Count)
+        {
+            return false;
+        }
+
+        var lvlImp = batch.LevelImports[batch.LevelImportIndex];
+
+        GameObject ecObj = LoadGeneralClass(lvlImp.Classes[lvlImp.EntityClassIndex].name);
+        if (ecObj != null)
+        {
+            ecObj.transform.parent = lvlImp.LevelRoot;
+            var extent = UnityUtils.GetMaxBounds(ecObj).extents;
+            float xExtent = extent.x;
+            lvlImp.RootZOffset = Math.Max(lvlImp.RootZOffset, extent.z);
+
+            lvlImp.SpawnOffset += new Vector3(xExtent,0,0);
+            ecObj.transform.localPosition = lvlImp.SpawnOffset;
+            lvlImp.SpawnOffset += new Vector3(xExtent,0,0);
+        }
+
+        if (++lvlImp.EntityClassIndex >= lvlImp.Classes.Length)
+        {
+            lvlImp.LevelRoot.localPosition = new Vector3(0.0f, 0.0f, lvlImp.RootZOffset + batch.ZOffset);
+            batch.ZOffset += lvlImp.RootZOffset * 2.0f;
+            ++batch.LevelImportIndex;
+        }
+
+        return true;
+    }
+
+
+
 
 
     public void DeleteAll()

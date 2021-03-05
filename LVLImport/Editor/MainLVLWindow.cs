@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using Debug = System.Diagnostics.Debug;
+using UDebug = UnityEngine.Debug;
 
 using System.Linq;
 
@@ -16,10 +18,10 @@ public class LVLImportWindow : EditorWindow {
 
     bool currentlyLoading, startLoading;
 
-    bool startLoadWorlds, startLoadClasses;
+    bool startLoadWorlds, startLoadClasses, startLoadEffects;
 
     static bool terrainAsMesh = false;
-    static bool saveTextures, saveMaterials, saveModels, saveAnims, saveObjects, saveWorld;
+    static bool saveTextures, saveMaterials, saveModels, saveAnims, saveObjects, saveWorld, saveEffects;
 
     static string matFolder = "Materials";
     static string texFolder = "Textures";
@@ -27,13 +29,37 @@ public class LVLImportWindow : EditorWindow {
     static string animsFolder = "Animations";
     static string objectsFolder = "Objects";
     static string worldFolder = "World";
+    static string effectsFolder = "Effects";
 
     static string savePathPrefix = "Assets/LVLImport/"; 
 
-    Container container;
+    static Container container;
 
     static List<string> filesToLoad = new List<string>();
-    List<uint>   fileHandles = new List<uint>();
+    static List<uint> fileHandles = new List<uint>();
+
+    Loader CurrentLoader = null;
+
+
+    enum ImporterAction
+    {
+        ImportClasses,
+        ImportEffects,
+        ImportWorlds,
+        None
+    }
+
+    static ImporterAction CurrentAction = ImporterAction.None;
+
+
+    enum ImporterState
+    {
+        Configuring,
+        Loading,
+        Importing,
+    } 
+
+    static ImporterState CurrentState = ImporterState.Configuring;
 
 
 
@@ -44,7 +70,6 @@ public class LVLImportWindow : EditorWindow {
         LVLImportWindow window = (LVLImportWindow)EditorWindow.GetWindow(typeof(LVLImportWindow));
         window.Show();
     }
-
 
 
     private string AddFileOption(string fileName, bool closeable = false)
@@ -94,7 +119,6 @@ public class LVLImportWindow : EditorWindow {
     }
 
 
-
     private void AddSpaces(int numSpaces = 1)
     {
         for (int i = 0; i < numSpaces; i++)
@@ -111,10 +135,9 @@ public class LVLImportWindow : EditorWindow {
 
 
 
-    void OnGUI()
-    {
-        GUI.enabled = !currentlyLoading;
 
+    private ImporterAction ExecStateConfiguration()
+    {
         EditorGUIUtility.labelWidth = 150;
         GUILayout.Label("Import Settings", EditorStyles.boldLabel);
 
@@ -154,7 +177,7 @@ public class LVLImportWindow : EditorWindow {
         if (!savePathPrefix.StartsWith("Assets"))
         {
             savePathPrefix = "Assets/LVLImport";
-            Debug.LogError("Save Path Prefix must start with \"Assets/\"!");
+            UDebug.LogError("Save Path Prefix must start with \"Assets/\"!");
         }
 
         AddSaveOption("Textures", ref saveTextures, ref texFolder);
@@ -163,6 +186,8 @@ public class LVLImportWindow : EditorWindow {
         AddSaveOption("Animations", ref saveAnims, ref animsFolder);
         AddSaveOption("Objects", ref saveObjects, ref objectsFolder);
         AddSaveOption("World", ref saveWorld, ref worldFolder);
+        
+        AddSaveOption("Effects", ref saveEffects, ref effectsFolder);
 
 
         saveTextures = saveMaterials ? true : saveTextures;
@@ -179,131 +204,169 @@ public class LVLImportWindow : EditorWindow {
             saveMaterials = true;
             saveAnims = true;
             saveModels = true;
-        }        
+        } 
+
+        if (saveEffects)
+        {
+            saveTextures = true;
+        }       
 
         AddSpaces(5);
 
-        
+
         GUILayout.BeginHorizontal();
-       
-        startLoadWorlds = GUILayout.Button("Import Worlds",GUILayout.Width(100)) ? true : currentlyLoading && startLoadWorlds;
-        startLoadClasses = GUILayout.Button("Import Objects",GUILayout.Width(100)) ? true : currentlyLoading && startLoadClasses;
-        GUILayout.EndHorizontal();
 
-        GUI.enabled = true;
+        ImporterAction result = ImporterAction.None;
 
-        startLoading = (startLoadClasses || startLoadWorlds) && !currentlyLoading;
-
-        if (startLoading)
+        if (GUILayout.Button("Import Worlds",GUILayout.Width(100)))
         {
-            container = new Container();
-
-            fileHandles = new List<uint>();
-            foreach (string path in filesToLoad)
-            {
-                fileHandles.Add(container.AddLevel(path));
-            }
-
-            container.LoadLevels();
-            currentlyLoading = true;
-            startLoading = false;
+            result = ImporterAction.ImportWorlds;
+        }
+        else if (GUILayout.Button("Import Objects",GUILayout.Width(100)))
+        {
+            result = ImporterAction.ImportClasses;
+        }
+        else if (GUILayout.Button("Import Effects",GUILayout.Width(100)))
+        {
+            result = ImporterAction.ImportEffects;
         }
 
-        if (currentlyLoading)
+        GUILayout.EndHorizontal();
+
+        return result;
+    }
+
+
+
+    private bool ExecStateLoading()
+    {
+        Debug.Assert(CurrentState == ImporterState.Loading);
+        for (int i = 0; i < filesToLoad.Count; i++)
         {
-            for (int i = 0; i < filesToLoad.Count; i++)
+            uint handle = fileHandles[i];
+            float progress = container.GetProgress(handle);
+            EditorGUI.ProgressBar(new Rect(3, 250 + 30 * i, position.width - 6, 20), progress, filesToLoad[i]);
+        }
+
+        return container.IsDone(); 
+    }
+
+
+    private bool ExecStateImporting()
+    {
+        Debug.Assert(CurrentState == ImporterState.Importing);
+
+        if (CurrentLoader.IterateBatch())
+        {
+            float progress = CurrentLoader.GetProgress(out string desc);
+            EditorGUI.ProgressBar(new Rect(3, 250 + 0, position.width - 6, 20), progress, desc);
+            return false;
+        }
+        else 
+        {
+            return true;
+        }
+    }
+
+
+    void TransitionToLoading()
+    {
+        Debug.Assert(CurrentState == ImporterState.Configuring);
+        CurrentState = ImporterState.Loading;
+
+        container = new Container();
+
+        fileHandles = new List<uint>();
+        foreach (string path in filesToLoad)
+        {
+            fileHandles.Add(container.AddLevel(path));
+        }
+
+        container.LoadLevels();
+    }
+
+
+
+    void TransitionToImporting()
+    {
+        Debug.Assert(CurrentState == ImporterState.Loading);
+        CurrentState = ImporterState.Importing;
+
+        Loader.ResetAllLoaders();
+        Loader.SetGlobalContainer(container);
+
+        WorldLoader.Instance.TerrainAsMesh = terrainAsMesh;
+
+        if (saveTextures){ TextureLoader.Instance.SetSave(savePathPrefix,texFolder); }
+        if (saveMaterials) { MaterialLoader.Instance.SetSave(savePathPrefix,matFolder); }
+        if (saveModels) { ModelLoader.Instance.SetSave(savePathPrefix,modelsFolder); }
+        if (saveAnims) { AnimationLoader.Instance.SetSave(savePathPrefix,animsFolder); }
+        if (saveObjects) { ClassLoader.Instance.SetSave(savePathPrefix,objectsFolder); }
+        if (saveWorld) { WorldLoader.Instance.SetSave(savePathPrefix, worldFolder); }
+
+        if (saveEffects) { EffectsLoader.Instance.SetSave(savePathPrefix, effectsFolder); }
+
+
+        List<Level> levels = new List<Level>();
+
+        foreach (var handle in fileHandles)
+        {
+            Level l = container.GetLevel(handle);
+            if (l != null)
             {
-                uint handle = fileHandles[i];
-                float progress = container.GetProgress(handle);
-                EditorGUI.ProgressBar(new Rect(3, 250 + 30 * i, position.width - 6, 20), progress, filesToLoad[i]);
+                levels.Add(l);    
             }
+        }
 
-            if (container.IsDone())
+        if (CurrentAction == ImporterAction.ImportWorlds)
+        {
+            CurrentLoader = WorldLoader.Instance;
+        }
+        else
+        {
+            CurrentLoader = ClassLoader.Instance;
+        }
+
+        CurrentLoader.SetBatch(levels.ToArray());
+    }
+
+
+    void TransitionToConfiguration()
+    {
+        CurrentState = ImporterState.Configuring;
+        CurrentAction = ImporterAction.None;
+        if (container != null)
+        {
+            container.Delete();
+        }
+        container = null;
+    }
+
+
+
+
+    void OnGUI()
+    {
+        if (CurrentState == ImporterState.Configuring)
+        {
+            CurrentAction = ExecStateConfiguration();
+            if (CurrentAction != ImporterAction.None)
             {
-                currentlyLoading = false;
-
-                Loader.ResetAllLoaders();
-                Loader.SetGlobalContainer(container);
-
-                WorldLoader.Instance.TerrainAsMesh = terrainAsMesh;
-
-                if (saveTextures){ TextureLoader.Instance.SetSave(savePathPrefix,texFolder); }
-                if (saveMaterials) { MaterialLoader.Instance.SetSave(savePathPrefix,matFolder); }
-                if (saveModels) { ModelLoader.Instance.SetSave(savePathPrefix,modelsFolder); }
-                if (saveAnims) { AnimationLoader.Instance.SetSave(savePathPrefix,animsFolder); }
-                if (saveObjects) { ClassLoader.Instance.SetSave(savePathPrefix,objectsFolder); }
-                if (saveWorld) { WorldLoader.Instance.SetSave(savePathPrefix, worldFolder); }
-
-
-                UnityEngine.Vector3 offset = new UnityEngine.Vector3(0,0,0); 
-
-
-                foreach (uint handle in fileHandles)
-                {
-                    Level level = container.GetLevel(handle);
-                    if (level == null)
-                    {
-                        continue;
-                    }
-
-                    if (startLoadWorlds)
-                    {
-                        foreach (World world in level.GetWrappers<World>())
-                        {
-                            WorldLoader.Instance.ImportWorld(world);
-                        }
-                    }
-
-                    AssetDatabase.Refresh();
-
-
-                    UnityEngine.Vector3 spawnLoc = new UnityEngine.Vector3(0,0,0); 
-                    
-                    if (startLoadClasses)
-                    {
-                        string levelName = level.Name;
-                        GameObject root = new GameObject(levelName == null ? "objects" : levelName.Replace(".lvl",""));
-                        root.transform.localPosition = offset;
-
-                        List<GameObject> importedObjs = new List<GameObject>();
-
-                        try
-                        {
-                            //AssetDatabase.StartAssetEditing();
-
-                            foreach (var ec in level.GetWrappers<EntityClass>())
-                            {
-                                GameObject newClass = ClassLoader.Instance.LoadGeneralClass(ec.name);
-                                if (newClass != null)
-                                {
-                                    importedObjs.Add(newClass);
-                                }
-                            }
-                        }
-                        finally
-                        {
-                            //AssetDatabase.StopAssetEditing();
-                            //AssetDatabase.Refresh();
-                        }
-
-                        foreach (GameObject newClass in importedObjs)
-                        {
-                            if (newClass != null)
-                            {
-                                newClass.transform.SetParent(root.transform, false);
-
-                                float xExtent = UnityUtils.GetMaxBounds(newClass).extents.x;
-                                spawnLoc += new Vector3(xExtent,0,0);
-                                newClass.transform.localPosition = spawnLoc;
-                                spawnLoc += new Vector3(xExtent,0,0);
-                            }
-                        }
-
-                        offset += new UnityEngine.Vector3(0,0,20);
-                    }
-                }
-
-                container.Delete();
+                TransitionToLoading();
+            }
+        }
+        else if (CurrentState == ImporterState.Loading)
+        {
+            if (ExecStateLoading())
+            {
+                TransitionToImporting();
+            }
+        }
+        else if (CurrentState == ImporterState.Importing)
+        {
+            if (ExecStateImporting())
+            {
+                TransitionToConfiguration();
             }
         }
     }

@@ -45,114 +45,208 @@ public class WorldLoader : Loader {
     }
 
 
-    public void ImportWorld(World world)
+
+    class WorldLoadState
     {
-        bool LoadedTerrain = false;
-
-    	GameObject worldRoot = new GameObject(world.name);
-
-
-        //Instances
-        GameObject instancesRoot = new GameObject("Instances");
-        instancesRoot.transform.parent = worldRoot.transform;
-
-        foreach (GameObject instanceObject in ImportInstances(world.GetInstances()))
-        {
-            instanceObject.transform.parent = instancesRoot.transform;
-        }
+        public World world;
+        public Transform WorldRoot;
+        public Transform InstancesRoot;
         
+        public int InstIndex;
+        public bool DoneTerrain, DoneLighting, DoneSkydome, DoneRegions;
 
-        //Terrain
-        var terrain = world.GetTerrain();
-        if (terrain != null && !LoadedTerrain)
+        public WorldLoadState(World wld)
         {
-            GameObject terrainGameObject;
-            if (TerrainAsMesh)
-            {
-                terrainGameObject = ImportTerrainAsMesh(terrain, world.name);
-            }
-            else 
-            {
-                terrainGameObject = ImportTerrain(terrain, world.name);
-            }
+            world = wld;
+            WorldRoot = new GameObject(wld.name).transform;
+            
+            InstancesRoot = new GameObject("Instances").transform;
+            InstancesRoot.parent = WorldRoot;
 
-            terrainGameObject.transform.parent = worldRoot.transform;
-            LoadedTerrain = true;
+            InstIndex = 0;
+
+            DoneTerrain = DoneLighting = DoneSkydome = DoneRegions = false;
         }
 
-
-        //Lighting
-        var lightingRoots = ImportLights(container.FindConfig(ConfigType.Lighting, world.name)); 
-        foreach (var lightingRoot in lightingRoots)
+        public float GetProgress()
         {
-            lightingRoot.transform.parent = worldRoot.transform;
-        }
+            int numInstances = world.GetInstances().Length;
+            float progress = .6f * (numInstances == 0 ? 1.0f : (float) InstIndex / (float) numInstances);
 
+            progress += DoneTerrain ? 0.1f : 0.0f;
+            progress += DoneLighting ? 0.1f : 0.0f;
+            progress += DoneSkydome ? 0.1f : 0.0f;
+            progress += DoneRegions ? 0.1f : 0.0f;
 
-        //Regions
-        var regionsRoot = ImportRegions(world.GetRegions());
-        regionsRoot.transform.parent = worldRoot.transform;
-
-
-        //Skydome, check if already loaded first
-        if (!loadedSkydomes.ContainsKey(world.skydomeName))
-        {
-            var skyRoot = ImportSkydome(container.FindConfig(ConfigType.Skydome, world.skydomeName));
-            if (skyRoot != null)
-            {
-                skyRoot.transform.parent = worldRoot.transform;
-            }
-
-            loadedSkydomes[world.skydomeName] = skyRoot;
+            return progress;
         }
     }
 
 
-    private List<GameObject> ImportInstances(Instance[] instances)
+    class BatchLoadState
     {
-        List<GameObject> instanceObjects = new List<GameObject>();
+        public List<WorldLoadState> WorldImports;
+        public int WorldImportIndex;
 
-        foreach (Instance inst in instances)
+        public BatchLoadState(List<WorldLoadState> wldImps)
         {
-            string entityClassName = inst.entityClassName;
-            string baseName = ClassLoader.Instance.GetBaseClassName(entityClassName);
+            WorldImports = wldImps;
+            WorldImportIndex = 0;
+        }
+    }
 
-            GameObject instanceObject = null;
+    private BatchLoadState batch = null;
 
-            switch (baseName)
+
+    public override void SetBatch(Level[] levels)
+    {
+        List<WorldLoadState> worldBatches = new List<WorldLoadState>();
+        foreach (Level level in levels)
+        {
+            foreach (World wld in level.GetWrappers<World>())
             {
-                case "door":
-                case "animatedprop":                  
-                case "prop":
-                case "building":
-                case "destructablebuilding":
-                case "armedbuilding":
-                case "animatedbuilding":
-                case "commandpost":
-                    instanceObject = ClassLoader.Instance.LoadGeneralClass(entityClassName,true);
-                    break;
-
-                default:
-                    break; 
+                worldBatches.Add(new WorldLoadState(wld));
             }
-
-            if (instanceObject == null)
-            {
-                continue;
-            }
-
-            if (!inst.name.Equals(""))
-            {
-                instanceObject.name = inst.name;
-            }
-
-            instanceObject.transform.rotation = UnityUtils.QuatFromLibWorld(inst.rotation);
-            instanceObject.transform.position = UnityUtils.Vec3FromLibWorld(inst.position);
-            instanceObject.transform.localScale = new Vector3(1.0f,1.0f,1.0f);
-            instanceObjects.Add(instanceObject);
         }
 
-        return instanceObjects;
+        batch = new BatchLoadState(worldBatches);
+    }
+
+
+    public override float GetProgress(out string desc)
+    {   
+        if (batch.WorldImportIndex >= batch.WorldImports.Count)
+        {
+            desc = "";
+            return 1.0f;
+        }
+
+        desc = batch.WorldImports[batch.WorldImportIndex].world.name;
+        return batch.WorldImports[batch.WorldImportIndex].GetProgress();  
+    }
+
+
+    public override bool IterateBatch()
+    {
+        if (batch.WorldImportIndex >= batch.WorldImports.Count) return false;
+
+        var curWorldLoadState = batch.WorldImports[batch.WorldImportIndex];
+        var curWorld = curWorldLoadState.world;
+
+        Transform worldRoot = curWorldLoadState.WorldRoot;
+        Instance[] curInstances = curWorld.GetInstances();
+        if (curWorldLoadState.InstIndex < curInstances.Length)
+        {
+            Instance curInst = curInstances[curWorldLoadState.InstIndex++];
+            GameObject instObj = ImportInstance(curInst);
+            if (instObj != null)
+            {
+                instObj.transform.parent = curWorldLoadState.InstancesRoot;
+            }
+            return true;    
+        }
+
+        if (!curWorldLoadState.DoneTerrain)
+        {
+            curWorldLoadState.DoneTerrain = true;
+            var terrain = curWorld.GetTerrain();
+
+            if (terrain != null)// && !LoadedTerrain)
+            {
+                GameObject terrainGameObject;
+                if (TerrainAsMesh)
+                {
+                    terrainGameObject = ImportTerrainAsMesh(terrain, curWorld.name);
+                }
+                else 
+                {
+                    terrainGameObject = ImportTerrain(terrain, curWorld.name);
+                }
+
+                terrainGameObject.transform.parent = worldRoot;
+                //LoadedTerrain = true;
+            }
+            return true;
+        }
+
+        if (!curWorldLoadState.DoneLighting)
+        {
+            curWorldLoadState.DoneLighting = true;
+            var lightingRoots = ImportLights(container.FindConfig(ConfigType.Lighting, curWorld.name)); 
+            foreach (var lightingRoot in lightingRoots)
+            {
+                lightingRoot.transform.parent = worldRoot;
+            }
+            return true;
+        }
+
+        if (!curWorldLoadState.DoneRegions)
+        {
+            curWorldLoadState.DoneRegions = true;
+            var regionsRoot = ImportRegions(curWorld.GetRegions());
+            regionsRoot.transform.parent = worldRoot;
+            return true;
+        }
+
+        if (!curWorldLoadState.DoneSkydome)
+        {
+            if (!loadedSkydomes.ContainsKey(curWorld.skydomeName))
+            {
+                var skyRoot = ImportSkydome(container.FindConfig(ConfigType.Skydome, curWorld.skydomeName));
+                if (skyRoot != null)
+                {
+                    skyRoot.transform.parent = worldRoot;
+                }
+
+                loadedSkydomes[curWorld.skydomeName] = skyRoot;
+            }
+            curWorldLoadState.DoneSkydome = true;
+            return true;
+        }
+
+        return (++batch.WorldImportIndex < batch.WorldImports.Count); 
+    }
+
+
+    private GameObject ImportInstance(Instance inst)
+    {
+        string entityClassName = inst.entityClassName;
+        string baseName = ClassLoader.Instance.GetBaseClassName(entityClassName);
+
+        GameObject instanceObject = null;
+
+        switch (baseName)
+        {
+            case "door":
+            case "animatedprop":                  
+            case "prop":
+            case "building":
+            case "destructablebuilding":
+            case "armedbuilding":
+            case "animatedbuilding":
+            case "commandpost":
+                instanceObject = ClassLoader.Instance.LoadGeneralClass(entityClassName,true);
+                break;
+
+            default:
+                break; 
+        }
+
+        if (instanceObject == null)
+        {
+            return null;
+        }
+
+        if (!inst.name.Equals(""))
+        {
+            instanceObject.name = inst.name;
+        }
+
+        instanceObject.transform.rotation = UnityUtils.QuatFromLibWorld(inst.rotation);
+        instanceObject.transform.position = UnityUtils.Vec3FromLibWorld(inst.position);
+        instanceObject.transform.localScale = new Vector3(1.0f,1.0f,1.0f);
+        
+        return instanceObject;
     }
 
 
@@ -553,5 +647,14 @@ public class WorldLoader : Loader {
         }
 
         return regionsRoot;
+    }
+
+
+    public void ImportWorld(World world)
+    {
+        var wldImps = new List<WorldLoadState>();
+        wldImps.Add(new WorldLoadState(world));
+        batch = new BatchLoadState(wldImps);
+        while (IterateBatch()){}
     }
 }
