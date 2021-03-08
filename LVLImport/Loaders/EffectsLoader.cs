@@ -13,6 +13,16 @@ using LibSWBF2.Wrappers;
 using LibSWBF2.Enums;
 using LibSWBF2.Utils;
 
+using LibSWBF2.Types;
+using LibVector2 = LibSWBF2.Types.Vector2;
+using LibVector3 = LibSWBF2.Types.Vector3;
+using LibVector4 = LibSWBF2.Types.Vector4;
+
+using UVector2 = UnityEngine.Vector2;
+using UVector3 = UnityEngine.Vector3;
+
+
+
 using UMaterial = UnityEngine.Material;
 
 // No DB yet, just testing with com_sfx_ord_flame...
@@ -23,6 +33,7 @@ public class EffectsLoader : Loader {
     {
         Instance = new EffectsLoader();
     }
+
 
     public void ImportEffects(string[] names)
     {
@@ -114,7 +125,7 @@ public class EffectsLoader : Loader {
         // Set starting position distribution
         var shapeModule = uEmitter.shape;
         shapeModule.shapeType = ParticleSystemShapeType.Box;
-        SpreadToPositionAndScale(scSpawner, out Vector3 spreadScale, out Vector3 spreadPos);
+        SpreadToPositionAndScale(scSpawner, out UVector3 spreadScale, out UVector3 spreadPos);
         shapeModule.scale = spreadScale;
         shapeModule.position = spreadPos; 
 
@@ -127,9 +138,25 @@ public class EffectsLoader : Loader {
         velModule.z = curves[2];
         velModule.speedModifier = scaleCurve;
         
-
-        mainModule.startLifetime = scTransformer.GetFloat("LifeTime");
+        float lifeTime = scTransformer.GetFloat("LifeTime");
+        mainModule.startLifetime = lifeTime;
+        mainModule.duration = lifeTime;
         mainModule.startSize = scSpawner.GetVec3("Size").Z;
+        mainModule.startRotation = AngleCurveFromVec(scSpawner.GetVec3("StartRotation"));
+
+
+        //mainModule.startColor = GetSpawnerColorInterval(scSpawner);
+
+
+        var colModule = uEmitter.colorOverLifetime;
+        colModule.enabled = true;
+        colModule.color = ColorTransformationToGradient(scTransformer, GetSpawnerColorInterval(scSpawner));
+
+
+
+        var rotModule = uEmitter.rotationOverLifetime;
+        rotModule.enabled = true;
+        rotModule.z = AngleCurveFromVec(scSpawner.GetVec3("RotationVelocity"));
 
         UMaterial mat = new UMaterial(Shader.Find("Particles/Standard Unlit"));
         mat.mainTexture = TextureLoader.Instance.ImportTexture(scGeometry.GetString("Texture"));
@@ -152,8 +179,42 @@ public class EffectsLoader : Loader {
     }
 
 
+    // Get spawner's starting color interval
+    private ParticleSystem.MinMaxGradient GetSpawnerColorInterval(Scope spawner)
+    {
+        Color minCol, maxCol;
+
+        // Test if provided as HSV or RGB...
+        if (spawner.GetField("Hue") != null)
+        {
+            var hRange = spawner.GetVec3("Hue");
+            var sRange = spawner.GetVec3("Saturation");
+            var vRange = spawner.GetVec3("Value");
+
+            minCol = Color.HSVToRGB(hRange.Y/255.0f, sRange.Y/255.0f, vRange.Y/255.0f);
+            maxCol = Color.HSVToRGB(hRange.Z/255.0f, sRange.Z/255.0f, vRange.Z/255.0f);
+        }
+        else
+        {
+            var rRange = spawner.GetVec3("Red");
+            var gRange = spawner.GetVec3("Green");
+            var bRange = spawner.GetVec3("Blue");
+
+            minCol = new Color(rRange.Y/255.0f, gRange.Y/255.0f, bRange.Y/255.0f);
+            maxCol = new Color(rRange.Z/255.0f, gRange.Z/255.0f, bRange.Z/255.0f);
+        }
+
+        var aRange = spawner.GetVec3("Alpha");
+        minCol.a = aRange.Y/255.0f;
+        maxCol.a = aRange.Z/255.0f;
+
+        return new ParticleSystem.MinMaxGradient(minCol, maxCol);
+    }
+
+
+
     // Get spawner's starting position properties as a box's scale + position
-    private void SpreadToPositionAndScale(Scope spawner, out Vector3 scale, out Vector3 position)
+    private void SpreadToPositionAndScale(Scope spawner, out UVector3 scale, out UVector3 position)
     {
         Scope spreadScope = spawner.GetField("Spread").scope;
         Scope offsetScope = spawner.GetField("Offset").scope;
@@ -171,8 +232,8 @@ public class EffectsLoader : Loader {
         float posY = (intervalY.Y + intervalY.X) / 2.0f;
         float posZ = (intervalZ.Y + intervalZ.X) / 2.0f;
 
-        scale = new Vector3(scaleX, scaleY, scaleZ);
-        position = new Vector3(posX, posY, posZ);
+        scale = new UVector3(scaleX, scaleY, scaleZ);
+        position = new UVector3(posX, posY, posZ);
     }
 
 
@@ -221,5 +282,96 @@ public class EffectsLoader : Loader {
         }
 
         return emitters;
+    }
+
+
+
+    private ParticleSystem.MinMaxCurve CurveFromVec(LibVector2 minMax)
+    {
+        return new ParticleSystem.MinMaxCurve(minMax.X, minMax.Y);
+    }
+
+    private ParticleSystem.MinMaxCurve AngleCurveFromVec(LibVector3 minMax)
+    {
+        return new ParticleSystem.MinMaxCurve(Mathf.Deg2Rad * minMax.Y, Mathf.Deg2Rad * minMax.Z);
+    }
+
+
+
+    public ParticleSystem.MinMaxGradient ColorTransformationToGradient(Scope transformerScope, ParticleSystem.MinMaxGradient initialGrad)
+    {
+        Gradient gradMin = new Gradient();
+        Gradient gradMax = new Gradient();
+
+        List<GradientColorKey> gradMinColKeys = new List<GradientColorKey>();
+        List<GradientAlphaKey> gradMinAlphaKeys = new List<GradientAlphaKey>();
+
+        List<GradientColorKey> gradMaxColKeys = new List<GradientColorKey>();
+        List<GradientAlphaKey> gradMaxAlphaKeys = new List<GradientAlphaKey>();
+
+        Color minColLast = initialGrad.colorMin; //initialGrad.gradientMin.colorKeys[0].color;
+        Color maxColLast = initialGrad.colorMax; //initialGrad.gradientMax.colorKeys[0].color;
+
+        float minAlphaLast = minColLast.a; //initialGrad.gradientMin.alphaKeys[0].alpha;
+        float maxAlphaLast = maxColLast.a; //initialGrad.gradientMax.alphaKeys[0].alpha;
+
+
+        float lifeTime = transformerScope.GetFloat("LifeTime");
+        float timeIndex = 0.0f;
+
+        gradMinColKeys.Add(new GradientColorKey(minColLast, timeIndex));
+        gradMaxColKeys.Add(new GradientColorKey(maxColLast, timeIndex));
+
+        gradMinAlphaKeys.Add(new GradientAlphaKey(minAlphaLast, timeIndex));
+        gradMaxAlphaKeys.Add(new GradientAlphaKey(maxAlphaLast, timeIndex));
+
+        Field curKey = transformerScope.GetField("Color");
+        while (curKey != null)
+        {
+            Scope scKey = curKey.scope;
+
+            timeIndex = scKey.GetFloat("LifeTime") / lifeTime;
+
+            Field keyMove, keyReach;
+            if ((keyMove = scKey.GetField("Move")) != null)
+            {
+                var c = keyMove.GetVec4();
+                Color col = new Color(c.X / 255.0f, c.Y / 255.0f, c.Z / 255.0f, 1.0f);
+
+                minColLast += col;
+                maxColLast += col;
+
+                minAlphaLast = Mathf.Clamp(minAlphaLast + c.W / 255.0f, 0.0f, 1.0f);
+                maxAlphaLast = Mathf.Clamp(maxAlphaLast + c.W / 255.0f, 0.0f, 1.0f);
+            }
+            else if ((keyReach = scKey.GetField("Reach")) != null)
+            {
+                var c = keyReach.GetVec4(); 
+                Color col = new Color(c.X / 255.0f, c.Y / 255.0f, c.Z / 255.0f, 1.0f);
+
+                minColLast = col;
+                maxColLast = col;
+
+                minAlphaLast = Mathf.Clamp(c.W / 255.0f, 0.0f, 1.0f);
+                maxAlphaLast = Mathf.Clamp(c.W / 255.0f, 0.0f, 1.0f);
+            }
+            else 
+            {
+                return new ParticleSystem.MinMaxGradient(gradMin, gradMax);
+            }
+
+            gradMinColKeys.Add(new GradientColorKey(minColLast, timeIndex));
+            gradMaxColKeys.Add(new GradientColorKey(maxColLast, timeIndex));
+
+            gradMinAlphaKeys.Add(new GradientAlphaKey(minAlphaLast, timeIndex));
+            gradMaxAlphaKeys.Add(new GradientAlphaKey(maxAlphaLast, timeIndex));
+
+            curKey = scKey.GetField("Next");
+        }
+
+        gradMin.SetKeys(gradMinColKeys.ToArray(), gradMinAlphaKeys.ToArray());
+        gradMax.SetKeys(gradMaxColKeys.ToArray(), gradMaxAlphaKeys.ToArray());
+
+        return new ParticleSystem.MinMaxGradient(gradMin, gradMax);
     }
 }
