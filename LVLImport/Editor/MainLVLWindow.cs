@@ -322,9 +322,14 @@ public class LVLImportWindow : EditorWindow {
         {
             CurrentLoader = WorldLoader.Instance;
         }
-        else
+        else if (CurrentAction == ImporterAction.ImportClasses)
         {
             CurrentLoader = ClassLoader.Instance;
+        }
+        else 
+        {
+            CurrentLoader = EffectsLoader.Instance;
+            EffectsLoader.Instance.ImportEffects(new string[] {"com_sfx_ord_flame", "com_sfx_vehicleflame", "com_sfx_explosion_lg"});
         }
 
         CurrentLoader.SetBatch(levels.ToArray());

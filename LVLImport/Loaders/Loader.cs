@@ -84,7 +84,7 @@ public abstract class Loader {
 
     public virtual bool IterateBatch()
     {
-        return true;
+        return false;
     }
 
     public virtual void SetBatch(Level[] levels)
