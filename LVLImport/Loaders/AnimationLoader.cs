@@ -94,7 +94,7 @@ public class AnimationLoader : Loader {
     {
         List<AnimationClip> clips = new List<AnimationClip>();
 
-        var bank = container.FindWrapper<AnimationBank>(animBankName);
+        var bank = container.Get<AnimationBank>(animBankName);
 
         if (bank == null)
         {
@@ -130,7 +130,7 @@ public class AnimationLoader : Loader {
     		return animDatabase[animID];
     	}
 
-    	var animBank = container.FindWrapper<AnimationBank>(animBankName);
+    	var animBank = container.Get<AnimationBank>(animBankName);
 
     	if (animBank == null)
     	{

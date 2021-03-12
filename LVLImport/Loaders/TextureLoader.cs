@@ -37,15 +37,15 @@ public class TextureLoader : Loader {
             return texDataBase[name];
         }
 
-        var tex = container.FindWrapper<LibSWBF2.Wrappers.Texture>(name);
+        var tex = container.Get<LibSWBF2.Wrappers.Texture>(name);
 
-        if (tex != null && tex.height * tex.width > 0)
+        if (tex != null && tex.Height * tex.Width > 0)
         {
-            Texture2D newTexture = new Texture2D(tex.width, tex.height, TextureFormat.RGBA32, false);
-            newTexture.name = tex.name;
+            Texture2D newTexture = new Texture2D(tex.Width, tex.Height, TextureFormat.RGBA32, false);
+            newTexture.name = tex.Name;
 
             byte[] data = tex.GetBytesRGBA();
-            data = mirror ? MirrorVertically(data, tex.width, tex.height, 4) : data;
+            data = mirror ? MirrorVertically(data, tex.Width, tex.Height, 4) : data;
 
             newTexture.LoadRawTextureData(data);
             newTexture.Apply();

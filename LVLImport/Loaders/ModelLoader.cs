@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
-using System.Text.RegularExpressions;
+using System.Collections.ObjectModel;
 using System.Linq;
 
 using UnityEngine;
@@ -94,26 +94,26 @@ public class ModelLoader : Loader {
     {
         skeleton = new Dictionary<string, Transform>();
 
-        LibBone[] hierarchy = model.skeleton;
+        ReadOnlyCollection<LibBone> hierarchy = model.Skeleton;
         if (hierarchy == null) return false;
 
         foreach (var node in hierarchy)
         {
-            var nodeTransform = new GameObject(node.name.ToLower()).transform;
-            nodeTransform.localRotation = UnityUtils.QuatFromLibSkel(node.rotation);
-            nodeTransform.localPosition = UnityUtils.Vec3FromLibSkel(node.location);
-            skeleton[node.name] = nodeTransform;
+            var nodeTransform = new GameObject(node.Name.ToLower()).transform;
+            nodeTransform.localRotation = UnityUtils.QuatFromLibSkel(node.Rotation);
+            nodeTransform.localPosition = UnityUtils.Vec3FromLibSkel(node.Location);
+            skeleton[node.Name] = nodeTransform;
         }
 
         foreach (var node in hierarchy)
         {   
-            if (node.parentName.Equals(""))
+            if (node.ParentName.Equals(""))
             {
-                skeleton[node.name].SetParent(newObject.transform, false);
+                skeleton[node.Name].SetParent(newObject.transform, false);
             }
             else 
             {
-                skeleton[node.name].SetParent(skeleton[node.parentName], false);   
+                skeleton[node.Name].SetParent(skeleton[node.ParentName], false);   
             }
         }
 
@@ -130,19 +130,19 @@ public class ModelLoader : Loader {
 
     private int AddWeights(GameObject obj, Model model, Mesh mesh)
     {
-        var segments = (from segment in model.GetSegments() where segment.boneName.Equals("") select segment).ToArray(); 
+        var segments = (from segment in model.GetSegments() where segment.BoneName.Equals("") select segment).ToArray(); 
 
         int totalLength = (int) segments.Sum(item => item.GetVertexBufferLength());
-        int txStatus = segments.Sum(item => item.isPretransformed ? 1 : 0);
+        int txStatus = segments.Sum(item => item.IsPretransformed ? 1 : 0);
 
         if (txStatus != 0 && txStatus != segments.Length)
         {
-            Debug.LogWarningFormat("Model {0} has heterogeneous pretransformation!  Please tell devs about this!!", model.name);
+            Debug.LogWarningFormat("Model {0} has heterogeneous pretransformation!  Please tell devs about this!!", model.Name);
             return 0;
         }
 
         byte bonesPerVert = (byte) (txStatus == 0 ? 3 : 1);  
-        bool broken = model.isSkeletonBroken;
+        bool broken = model.IsSkeletonBroken;
 
         BoneWeight1[] weights = new BoneWeight1[totalLength * bonesPerVert];
 
@@ -171,11 +171,11 @@ public class ModelLoader : Loader {
     public bool AddStaticMeshes(GameObject newObject, Model model,
                                                     Dictionary<string, Transform> skeleton)
     {
-        List<Segment> segments = (from segment in model.GetSegments() where !segment.boneName.Equals("") select segment).ToList();
+        List<Segment> segments = (from segment in model.GetSegments() where !segment.BoneName.Equals("") select segment).ToList();
         Dictionary<string, List<Segment>> segmentMap = new Dictionary<string, List<Segment>>();
         foreach (var segment in segments)
         {
-            string boneName = segment.boneName;
+            string boneName = segment.BoneName;
 
             if (boneName.Equals("")) continue;
 
@@ -194,10 +194,10 @@ public class ModelLoader : Loader {
             List<Segment> mappedSegments = segmentMap[boneName];
 
             MeshFilter filter = boneObj.AddComponent<MeshFilter>();
-            filter.sharedMesh = GetMeshFromSegments(mappedSegments.ToArray(), model.name + "_" + boneName);
+            filter.sharedMesh = GetMeshFromSegments(mappedSegments.ToArray(), model.Name + "_" + boneName);
 
             MeshRenderer renderer = boneObj.AddComponent<MeshRenderer>();
-            renderer.sharedMaterials = (from segment in mappedSegments select MaterialLoader.Instance.LoadMaterial(segment.material)).ToArray();
+            renderer.sharedMaterials = (from segment in mappedSegments select MaterialLoader.Instance.LoadMaterial(segment.Material)).ToArray();
         }
 
         return true;
@@ -211,9 +211,9 @@ public class ModelLoader : Loader {
 
     private bool AddSkinningComponents(GameObject newObject, Model model, Dictionary<string, Transform> skeleton)
     {
-        Segment[] skinnedSegments = (from segment in model.GetSegments() where segment.boneName.Equals("") select segment).ToArray();
-        Mesh mesh = GetMeshFromSegments(skinnedSegments.ToArray(), model.name + "_skin");
-        UMaterial[] mats = (from segment in skinnedSegments select MaterialLoader.Instance.LoadMaterial(segment.material)).ToArray();
+        Segment[] skinnedSegments = (from segment in model.GetSegments() where segment.BoneName.Equals("") select segment).ToArray();
+        Mesh mesh = GetMeshFromSegments(skinnedSegments.ToArray(), model.Name + "_skin");
+        UMaterial[] mats = (from segment in skinnedSegments select MaterialLoader.Instance.LoadMaterial(segment.Material)).ToArray();
 
         int skinType = AddWeights(newObject, model, mesh);
         if (skinType == 0)
@@ -223,26 +223,26 @@ public class ModelLoader : Loader {
 
         //Below, we handle 
         SkinnedMeshRenderer skinRenderer = newObject.AddComponent<SkinnedMeshRenderer>();
-        LibBone[] bonesSWBF = model.skeleton;
+        ReadOnlyCollection<LibBone> bonesSWBF = model.Skeleton;
 
         /*
         Set bones
         */
-        Transform[] bones = new Transform[bonesSWBF.Length];
-        for (int boneNum = 0; boneNum < bonesSWBF.Length; boneNum++)
+        Transform[] bones = new Transform[bonesSWBF.Count];
+        for (int boneNum = 0; boneNum < bonesSWBF.Count; boneNum++)
         {
             var curBoneSWBF = bonesSWBF[boneNum];
-            bones[boneNum] = skeleton[curBoneSWBF.name];
+            bones[boneNum] = skeleton[curBoneSWBF.Name];
 
             //Messy, will fix once skeleton edge cases are sorted out
-            //bones[boneNum].SetParent(curBoneSWBF.parentName != null && curBoneSWBF.parentName != "" && !curBoneSWBF.parentName.Equals(curBoneSWBF.name) ? skeleton[curBoneSWBF.parentName] : newObject.transform, false);
+            //bones[boneNum].SetParent(curBoneSWBF.parentName != null && curBoneSWBF.parentName != "" && !curBoneSWBF.parentName.Equals(curBoneSWBF.Name) ? skeleton[curBoneSWBF.parentName] : newObject.transform, false);
         }
 
         /*
         Set bindposes...
         */
-        Matrix4x4[] bindPoses = new Matrix4x4[bonesSWBF.Length];
-        for (int boneNum = 0; boneNum < bonesSWBF.Length; boneNum++)
+        Matrix4x4[] bindPoses = new Matrix4x4[bonesSWBF.Count];
+        for (int boneNum = 0; boneNum < bonesSWBF.Count; boneNum++)
         {
             if (skinType == 1)
             {
@@ -262,11 +262,11 @@ public class ModelLoader : Loader {
         skinRenderer.sharedMesh = mesh;
         skinRenderer.sharedMaterials = mats;
 
-        for (int boneNum = 0; boneNum < bonesSWBF.Length; boneNum++)
+        for (int boneNum = 0; boneNum < bonesSWBF.Count; boneNum++)
         {
             var curBoneSWBF = bonesSWBF[boneNum];
-            skeleton[curBoneSWBF.name].localRotation = UnityUtils.QuatFromLibSkel(curBoneSWBF.rotation);
-            skeleton[curBoneSWBF.name].localPosition = UnityUtils.Vec3FromLibSkel(curBoneSWBF.location);
+            skeleton[curBoneSWBF.Name].localRotation = UnityUtils.QuatFromLibSkel(curBoneSWBF.Rotation);
+            skeleton[curBoneSWBF.Name].localPosition = UnityUtils.Vec3FromLibSkel(curBoneSWBF.Location);
         }
 
         return true;
@@ -294,7 +294,7 @@ public class ModelLoader : Loader {
 
         AddStaticMeshes(newObject, model, skeleton);
         
-        if (model.isSkinned)
+        if (model.IsSkinned)
         {
             AddSkinningComponents(newObject, model, skeleton);
         }
@@ -304,7 +304,7 @@ public class ModelLoader : Loader {
 
     public bool AddModelComponents(GameObject newObject, string modelName)
     {
-        return AddModelComponents(newObject, container.FindWrapper<Model>(modelName));
+        return AddModelComponents(newObject, container.Get<Model>(modelName));
     }
 
 
@@ -336,7 +336,7 @@ public class ModelLoader : Loader {
             CollisionPrimitive[] allColliderNames = model.GetPrimitivesMasked();
             foreach (var prim in allColliderNames)
             {
-                if (colliderNames.Contains(prim.name))
+                if (colliderNames.Contains(prim.Name))
                 {
                     prims.Add(prim);
                 }
@@ -346,7 +346,7 @@ public class ModelLoader : Loader {
         // Instantiate and attach converted primitives
         foreach (var prim in prims) 
         {
-            string parentBone = prim.parentName;
+            string parentBone = prim.ParentName;
             Transform boneTx = null;
 
             if (parentBone.Equals(""))
@@ -360,12 +360,12 @@ public class ModelLoader : Loader {
 
             if (boneTx == null) continue;
 
-            GameObject primObj = new GameObject(prim.name);
-            primObj.transform.localPosition = UnityUtils.Vec3FromLibSkel(prim.position);
-            primObj.transform.localRotation = UnityUtils.QuatFromLibSkel(prim.rotation);
+            GameObject primObj = new GameObject(prim.Name);
+            primObj.transform.localPosition = UnityUtils.Vec3FromLibSkel(prim.Position);
+            primObj.transform.localRotation = UnityUtils.QuatFromLibSkel(prim.Rotation);
             primObj.transform.SetParent(boneTx, false);
 
-            switch (prim.primitiveType)
+            switch (prim.PrimitiveType)
             {
                 case 4:
                     BoxCollider boxColl = primObj.AddComponent<BoxCollider>();
@@ -397,7 +397,7 @@ public class ModelLoader : Loader {
                 // This happens, not sure what to make of it, but 
                 // all prims of this type have zeroed fields.
                 default:
-                    Debug.LogWarning(model.name + ": Unknown collision type encountered");
+                    Debug.LogWarning(model.Name + ": Unknown collision type encountered");
                     break;
             }
         }
@@ -421,7 +421,7 @@ public class ModelLoader : Loader {
 
         Model model = null;
         try {
-            model = container.FindWrapper<Model>(modelName);
+            model = container.Get<Model>(modelName);
         }
         catch { 
             return false;

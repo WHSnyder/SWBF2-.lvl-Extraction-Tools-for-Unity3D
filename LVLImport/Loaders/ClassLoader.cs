@@ -48,20 +48,20 @@ public class ClassLoader : Loader {
 
     public string GetBaseClassName(string name)
     {
-        var ecWrapper = container.FindWrapper<EntityClass>(name);
+        var ecWrapper = container.Get<EntityClass>(name);
 
         if (ecWrapper == null)
         {
             return "";
         }
 
-        return ecWrapper.GetBaseName();
+        return ecWrapper.BaseClassName;
     }
 
 
     private bool IsStaticObjectClass(EntityClass ec)
     {
-        switch (ec.GetBaseName())
+        switch (ec.BaseClassName)
         {
         case "door":
         case "animatedprop":                  
@@ -107,7 +107,7 @@ public class ClassLoader : Loader {
             return duplicate;
         }
 
-        var ecWrapper = container.FindWrapper<EntityClass>(name);
+        var ecWrapper = container.Get<EntityClass>(name);
         if (ecWrapper == null)
         {
             Debug.LogWarningFormat("\tObject class: {0} not defined in loaded levels...", name);

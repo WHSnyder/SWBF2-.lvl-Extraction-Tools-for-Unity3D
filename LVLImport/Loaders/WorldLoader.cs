@@ -23,7 +23,6 @@ using ULight = UnityEngine.Light;
 public class WorldLoader : Loader {
 
     public bool TerrainAsMesh = false;
-
     public static WorldLoader Instance { get; private set; } = null;
     static WorldLoader()
     {
@@ -49,7 +48,7 @@ public class WorldLoader : Loader {
     {
         bool LoadedTerrain = false;
 
-    	GameObject worldRoot = new GameObject(world.name);
+    	GameObject worldRoot = new GameObject(world.Name);
 
 
         //Instances
@@ -69,11 +68,11 @@ public class WorldLoader : Loader {
             GameObject terrainGameObject;
             if (TerrainAsMesh)
             {
-                terrainGameObject = ImportTerrainAsMesh(terrain, world.name);
+                terrainGameObject = ImportTerrainAsMesh(terrain, world.Name);
             }
             else 
             {
-                terrainGameObject = ImportTerrain(terrain, world.name);
+                terrainGameObject = ImportTerrain(terrain, world.Name);
             }
 
             terrainGameObject.transform.parent = worldRoot.transform;
@@ -82,7 +81,7 @@ public class WorldLoader : Loader {
 
 
         //Lighting
-        var lightingRoots = ImportLights(container.FindConfig(ConfigType.Lighting, world.name)); 
+        var lightingRoots = ImportLights(container.FindConfig(ConfigType.Lighting, world.Name)); 
         foreach (var lightingRoot in lightingRoots)
         {
             lightingRoot.transform.parent = worldRoot.transform;
@@ -95,15 +94,15 @@ public class WorldLoader : Loader {
 
 
         //Skydome, check if already loaded first
-        if (!loadedSkydomes.ContainsKey(world.skydomeName))
+        if (!loadedSkydomes.ContainsKey(world.SkydomeName))
         {
-            var skyRoot = ImportSkydome(container.FindConfig(ConfigType.Skydome, world.skydomeName));
+            var skyRoot = ImportSkydome(container.FindConfig(ConfigType.Skydome, world.SkydomeName));
             if (skyRoot != null)
             {
                 skyRoot.transform.parent = worldRoot.transform;
             }
 
-            loadedSkydomes[world.skydomeName] = skyRoot;
+            loadedSkydomes[world.SkydomeName] = skyRoot;
         }
     }
 
@@ -114,7 +113,7 @@ public class WorldLoader : Loader {
 
         foreach (Instance inst in instances)
         {
-            string entityClassName = inst.entityClassName;
+            string entityClassName = inst.EntityClassName;
             string baseName = ClassLoader.Instance.GetBaseClassName(entityClassName);
 
             GameObject instanceObject = null;
@@ -141,13 +140,13 @@ public class WorldLoader : Loader {
                 continue;
             }
 
-            if (!inst.name.Equals(""))
+            if (!inst.Name.Equals(""))
             {
-                instanceObject.name = inst.name;
+                instanceObject.name = inst.Name;
             }
 
-            instanceObject.transform.rotation = UnityUtils.QuatFromLibWorld(inst.rotation);
-            instanceObject.transform.position = UnityUtils.Vec3FromLibWorld(inst.position);
+            instanceObject.transform.rotation = UnityUtils.QuatFromLibWorld(inst.Rotation);
+            instanceObject.transform.position = UnityUtils.Vec3FromLibWorld(inst.Position);
             instanceObject.transform.localScale = new Vector3(1.0f,1.0f,1.0f);
             instanceObjects.Add(instanceObject);
         }
@@ -187,7 +186,7 @@ public class WorldLoader : Loader {
         renderer.sharedMaterial = terrainMat;
 
         int i = 0;
-        foreach (string texName in terrain.layerTextures)
+        foreach (string texName in terrain.LayerTextures)
         {
             Texture2D tex = TextureLoader.Instance.ImportTexture(texName);
             string layerTexName = "_LayerXXTex".Replace("XX",i.ToString());
@@ -262,8 +261,8 @@ public class WorldLoader : Loader {
     {
         //Read heightmap
         terrain.GetHeightMap(out uint dim, out uint dimScale, out float[] heightsRaw);
-        float floor = terrain.heightLowerBound;
-        float ceiling = terrain.heightUpperBound;
+        float floor = terrain.HeightLowerBound;
+        float ceiling = terrain.HeightUpperBound;
         
         TerrainData terData = new TerrainData();
 
@@ -295,7 +294,7 @@ public class WorldLoader : Loader {
 
         //Get list of textures used
         List<Texture2D> terTextures = new List<Texture2D>();
-        foreach (string texName in terrain.layerTextures)
+        foreach (string texName in terrain.LayerTextures)
         {
             Texture2D tex = TextureLoader.Instance.ImportTexture(texName);
             if (tex != null)
@@ -373,7 +372,7 @@ public class WorldLoader : Loader {
         Field globalLighting = lightingConfig.GetField("GlobalLights");
         if (globalLighting != null)
         {
-            Scope gl = globalLighting.scope;
+            Scope gl = globalLighting.Scope;
             light1Name = gl.GetField("Light1").GetString();
             light2Name = gl.GetField("Light2").GetString();
 
@@ -386,7 +385,7 @@ public class WorldLoader : Loader {
         }
 
 
-        List<Field> lightFields = lightingConfig.GetFields("Light");
+        Field[] lightFields = lightingConfig.GetFields("Light");
 
         GameObject localLightsRoot = new GameObject("LocalLights");
         lightObjects.Add(localLightsRoot);
@@ -394,10 +393,10 @@ public class WorldLoader : Loader {
         foreach (Field light in lightFields) 
         {
             string lightName = light.GetString();
-            Scope sl = light.scope;
+            Scope sl = light.Scope;
 
-            bool IsGlobal = String.Equals(lightName, light1Name, StringComparison.OrdinalIgnoreCase) ||
-                            String.Equals(lightName, light2Name, StringComparison.OrdinalIgnoreCase);
+            bool IsGlobal = string.Equals(lightName, light1Name, StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(lightName, light2Name, StringComparison.OrdinalIgnoreCase);
 
 
             GameObject lightObj = new GameObject(lightName);
@@ -439,7 +438,7 @@ public class WorldLoader : Loader {
             }
             else 
             {
-                Debug.LogWarning("Cant handle light type for " + light.name + " yet");
+                Debug.LogWarning("Cant handle light type for " + light.Name + " yet");
                 continue;
             }
 
@@ -472,15 +471,15 @@ public class WorldLoader : Loader {
         Field domeInfo = skydomeConfig.GetField("DomeInfo");
         if (domeInfo != null)
         {
-            Scope sDi = domeInfo.scope;
+            Scope sDi = domeInfo.Scope;
 
             //Havent decided re this yet
             Color ambient = UnityUtils.ColorFromLib(sDi.GetVec3("Ambient"));
 
-            List<Field> domeModelFields = sDi.GetFields("DomeModel");
+            Field[] domeModelFields = sDi.GetFields("DomeModel");
             foreach (Field domeModelField in domeModelFields)
             {
-                Scope sD = domeModelField.scope;
+                Scope sD = domeModelField.Scope;
                 string geometryName = sD.GetString("Geometry");
                 GameObject domeModelObj = new GameObject(geometryName);
 
@@ -504,10 +503,10 @@ public class WorldLoader : Loader {
         GameObject domeObjectsRoot = new GameObject("SkyObjects");
         domeObjectsRoot.transform.parent = skyRoot.transform;
 
-        List<Field> domeObjectFields = skydomeConfig.GetFields("SkyObject");
+        Field[] domeObjectFields = skydomeConfig.GetFields("SkyObject");
         foreach (Field domeObjectField in domeObjectFields)
         {
-            string geometryName = domeObjectField.scope.GetString("Geometry");
+            string geometryName = domeObjectField.Scope.GetString("Geometry");
             GameObject domeObject = new GameObject(geometryName);
 
             ModelLoader.Instance.AddModelComponents(domeObject, geometryName);
@@ -518,7 +517,7 @@ public class WorldLoader : Loader {
             }
 
             domeObject.transform.parent = domeObjectsRoot.transform;
-            domeObject.transform.localPosition = new Vector3(0, domeObjectField.scope.GetVec2("Height").X, 0);
+            domeObject.transform.localPosition = new Vector3(0, domeObjectField.Scope.GetVec2("Height").X, 0);
         }
 
         return skyRoot;
@@ -531,11 +530,11 @@ public class WorldLoader : Loader {
         GameObject regionsRoot = new GameObject("Regions");
         foreach (Region region in regions)
         {
-            GameObject regionObj = new GameObject(region.name);
-            regionObj.transform.position = UnityUtils.Vec3FromLibWorld(region.position);
-            regionObj.transform.rotation = UnityUtils.QuatFromLibWorld(region.rotation);
+            GameObject regionObj = new GameObject(region.Name);
+            regionObj.transform.position = UnityUtils.Vec3FromLibWorld(region.Position);
+            regionObj.transform.rotation = UnityUtils.QuatFromLibWorld(region.Rotation);
 
-            LibVec3 sz = region.size;
+            LibVec3 sz = region.Size;
 
             //if (region.type.Equals("box"))
             //{
